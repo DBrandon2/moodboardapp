@@ -139,6 +139,66 @@ export default function Canvas() {
     setScale(1);
   };
 
+  const handleDragOver = (e) => {
+    e.preventDefault(); // obligatoire pour que le drop fonctionne
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    const url = e.dataTransfer.getData("text/uri-list");
+
+    // Convertir les coordonnées écran en coordonnées canvas
+    const rect = containerRef.current.getBoundingClientRect();
+    const canvasX =
+      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const canvasY =
+      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (!file.type.startsWith("image/")) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.src = reader.result;
+        img.onload = () => {
+          const maxWidth = 200;
+          const scale = maxWidth / img.width;
+          const width = img.width * scale;
+          const height = img.height * scale;
+
+          addImage({
+            url: reader.result,
+            x: canvasX - width / 2,
+            y: canvasY - height / 2,
+            width,
+            height,
+          });
+        };
+      };
+      reader.readAsDataURL(file);
+    } else if (url) {
+      const img = new Image();
+      img.src = url;
+      img.onload = () => {
+        const maxWidth = 200;
+        const scale = maxWidth / img.width;
+        const width = img.width * scale;
+        const height = img.height * scale;
+
+        addImage({
+          url,
+          x: canvasX - width / 2,
+          y: canvasY - height / 2,
+          width,
+          height,
+        });
+      };
+    }
+  };
+
   return (
     <div className="flex flex-col w-screen h-screen select-none">
       <Toolbar
@@ -154,6 +214,8 @@ export default function Canvas() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         {/* Grille de fond */}
         <div
