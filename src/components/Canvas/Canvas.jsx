@@ -5,6 +5,7 @@ import Toolbar from "./Toolbar";
 export default function Canvas() {
   const images = useBoardStore((state) => state.images);
   const addImage = useBoardStore((state) => state.addimage);
+  const [openPanel, setOpenPanel] = useState(null);
 
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -199,9 +200,18 @@ export default function Canvas() {
     }
   };
 
+  const handleCanvasClick = () => {
+    setOpenPanel(null); // ferme le panel quand on clique sur le canvas
+  };
+
   return (
-    <div className="flex flex-col w-screen h-screen select-none">
+    <div
+      className="flex w-screen h-screen select-none"
+      onClick={handleCanvasClick}
+    >
       <Toolbar
+        openPanel={openPanel}
+        setOpenPanel={setOpenPanel}
         onRecenter={handleRecenter}
         offsetX={offsetX}
         offsetY={offsetY}
@@ -209,7 +219,7 @@ export default function Canvas() {
 
       <div
         ref={containerRef}
-        className="flex-1 w-full h-full bg-gray-900 overflow-hidden cursor-grab active:cursor-grabbing"
+        className="flex-1 bg-gray-900 overflow-hidden cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

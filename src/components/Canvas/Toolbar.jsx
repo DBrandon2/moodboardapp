@@ -1,7 +1,14 @@
 import React, { useState } from "react";
 import { useBoardStore } from "../../store/boardStore";
+import { FiImage, FiCompass } from "react-icons/fi";
 
-export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
+export default function Toolbar({
+  onRecenter,
+  offsetX = 0,
+  offsetY = 0,
+  openPanel,
+  setOpenPanel,
+}) {
   const [url, setUrl] = useState("");
   const addImage = useBoardStore((state) => state.addimage);
 
@@ -18,9 +25,8 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       const width = maxWidth;
       const height = img.height * scale;
 
-      // Centrer l'image au centre de l'écran visible
       const screenCenterX = window.innerWidth / 2;
-      const screenCenterY = (window.innerHeight - 64) / 2; // 64px pour la toolbar
+      const screenCenterY = window.innerHeight / 2;
 
       addImage({
         url,
@@ -30,38 +36,71 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
         height,
       });
       setUrl("");
+      setOpenPanel(null);
     };
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      handleAddImage();
-    }
+    if (e.key === "Enter") handleAddImage();
+  };
+
+  const handlePanelToggle = (panelName, e) => {
+    e.stopPropagation();
+    setOpenPanel(openPanel === panelName ? null : panelName);
   };
 
   return (
-    <div className="toolbar w-full h-16 bg-gray-700 border-b-2 border-gray-600 p-4 flex gap-2 flex-shrink-0 z-20">
-      <input
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        onKeyDown={handleKeyDown}
-        type="text"
-        placeholder="https://... (ou Ctrl+V pour coller une image)"
-        className="flex-1 px-3 py-2 rounded text-black border border-gray-400 focus:border-blue-500 focus:outline-none"
-      />
+    <div className="w-16 bg-gray-800 h-full flex flex-col items-center py-4 gap-4 border-r border-gray-700 relative">
+      {/* Bouton Recentrer */}
       <button
-        onClick={handleAddImage}
-        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRecenter();
+        }}
+        className="text-white text-3xl p-2 hover:bg-gray-700 rounded transition-colors"
+        title="Recentrer"
       >
-        Ajouter Image
+        <FiCompass />
       </button>
+      
+      {/* Bouton URL */}
       <button
-        onClick={onRecenter}
-        className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors font-medium whitespace-nowrap"
-        title="Recentrer la vue"
+        onClick={(e) => handlePanelToggle("url", e)}
+        className="text-white text-3xl p-2 hover:bg-gray-700 rounded transition-colors"
+        title="Ajouter une image par URL"
       >
-        ⊙ Centrer
+        <FiImage />
       </button>
+
+      {/* Panel URL séparé du bouton */}
+      {openPanel === "url" && (
+        <div
+          className="absolute left-20 top-2 bg-gray-700 p-4 rounded shadow-lg flex flex-col gap-2 w-80 z-50"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex w-full">
+            <p className="text-neutral-300">Ajouter une image par URL</p>
+          </div>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            type="text"
+            placeholder="https://... (ou Ctrl+V)"
+            className="px-3 py-2 rounded text-neutral-300 border border-neutral-300 "
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={handleAddImage}
+              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors font-medium"
+            >
+              Ajouter Image
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
