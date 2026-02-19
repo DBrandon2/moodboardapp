@@ -184,25 +184,24 @@ export default function Canvas() {
     return null;
   };
 
- const getRotationHandleAtPoint = (mouseX, mouseY, imageId) => {
-  const img = images.find((i) => i.id === imageId);
-  if (!img) return false;
+  const getRotationHandleAtPoint = (mouseX, mouseY, imageId) => {
+    const img = images.find((i) => i.id === imageId);
+    if (!img) return false;
 
-  const local = getLocalPoint(mouseX, mouseY, img);
+    const local = getLocalPoint(mouseX, mouseY, img);
 
-  const handleX = img.width / 2;
-  const handleY = -50;
+    const handleX = img.width / 2;
+    const handleY = -50;
 
-  const handleSize = 12;
+    const handleSize = 12;
 
-  return (
-    local.x >= handleX - handleSize &&
-    local.x <= handleX + handleSize &&
-    local.y >= handleY - handleSize &&
-    local.y <= handleY + handleSize
-  );
-};
-
+    return (
+      local.x >= handleX - handleSize &&
+      local.x <= handleX + handleSize &&
+      local.y >= handleY - handleSize &&
+      local.y <= handleY + handleSize
+    );
+  };
 
   const handleMouseDown = (e) => {
     if (e.target.closest(".toolbar")) return;
@@ -858,7 +857,6 @@ export default function Canvas() {
                   >
                     <line
                       x1="50%"
-                      y1="50%"
                       x2="50%"
                       y2="-50"
                       stroke="#3b82f6"
