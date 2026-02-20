@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../../store/boardStore";
-import Toolbar from "./Toolbar";
 
-export default function Canvas() {
+export default function Canvas({
+  offsetX,
+  setOffsetX,
+  offsetY,
+  setOffsetY,
+  scale,
+  setScale,
+}) {
   const images = useBoardStore((state) => state.images);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
   const addImage = useBoardStore((state) => state.addimage);
@@ -19,7 +25,6 @@ export default function Canvas() {
   const undo = useBoardStore((state) => state.undo);
   const selectImages = useBoardStore((state) => state.selectImages);
   const clearSelection = useBoardStore((state) => state.clearSelection);
-  const [openPanel, setOpenPanel] = useState(null);
 
   const [isPanning, setIsPanning] = useState(false);
 
@@ -30,6 +35,9 @@ export default function Canvas() {
 
   const dragStartRef = useRef({ x: 0, y: 0 });
   const ctrlPressedRef = useRef(false);
+
+  const mouseMoveHandlerRef = useRef(null);
+  const mouseUpHandlerRef = useRef(null);
 
   // Boîte de sélection
   const selectionBoxRef = useRef({
@@ -76,9 +84,13 @@ export default function Canvas() {
     centerY: 0,
   });
 
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  const [scale, setScale] = useState(1);
+  const autoPanRef = useRef({
+    active: false,
+    directionX: 0,
+    directionY: 0,
+    rafId: null,
+  });
+
   const [selectionBox, setSelectionBox] = useState(null);
 
   useEffect(() => {
@@ -150,6 +162,33 @@ export default function Canvas() {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [undo]);
+
+  // Attacher mousemove et mouseup à window pour tracker même hors du canvas
+  useEffect(() => {
+    const handleDocumentMouseMove = (e) => {
+      if (
+        selectionBoxRef.current.active ||
+        draggingRef.current.active ||
+        resizingRef.current.active ||
+        rotatingRef.current.active ||
+        panningRef.current.active
+      ) {
+        mouseMoveHandlerRef.current?.(e);
+      }
+    };
+
+    const handleDocumentMouseUp = (e) => {
+      mouseUpHandlerRef.current?.(e);
+    };
+
+    window.addEventListener("mousemove", handleDocumentMouseMove);
+    window.addEventListener("mouseup", handleDocumentMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleDocumentMouseMove);
+      window.removeEventListener("mouseup", handleDocumentMouseUp);
+    };
+  }, []);
 
   const getResizeHandleAtPoint = (mouseX, mouseY, imageId) => {
     const img = images.find((i) => i.id === imageId);
@@ -329,6 +368,40 @@ export default function Canvas() {
   const handleMouseMove = (e) => {
     const rect = containerRef.current.getBoundingClientRect();
 
+    /* =========================
+      AUTO PAN DETECTION
+    ========================= */
+
+    const edgeThreshold = 100;
+    let dirX = 0;
+    let dirY = 0;
+
+    if (selectionBoxRef.current.active || draggingRef.current.active) {
+      const distanceLeft = e.clientX - rect.left;
+      const distanceRight = rect.right - e.clientX;
+      const distanceTop = e.clientY - rect.top;
+      const distanceBottom = rect.bottom - e.clientY;
+
+      if (distanceLeft < edgeThreshold)
+        dirX = (edgeThreshold - distanceLeft) / edgeThreshold;
+      else if (distanceRight < edgeThreshold)
+        dirX = -(edgeThreshold - distanceRight) / edgeThreshold;
+
+      if (distanceTop < edgeThreshold)
+        dirY = (edgeThreshold - distanceTop) / edgeThreshold;
+      else if (distanceBottom < edgeThreshold)
+        dirY = -(edgeThreshold - distanceBottom) / edgeThreshold;
+
+      if (dirX !== 0 || dirY !== 0) {
+        autoPanRef.current.active = true;
+        autoPanRef.current.directionX = dirX;
+        autoPanRef.current.directionY = dirY;
+        startAutoPan();
+      } else {
+        stopAutoPan();
+      }
+    }
+
     // Rotation
     if (rotatingRef.current.active) {
       const mouseX =
@@ -371,77 +444,94 @@ export default function Canvas() {
       let newX = start.x;
       let newY = start.y;
 
-      // Gérer les différents types de handles avec ratio proportionnel si Ctrl
+      // Gérer les différents types de handles avec ratio proportionnel si Shift
       if (handle === "br") {
+        // Anchor: top-left
         if (isProportional) {
           const maxDelta = Math.max(deltaX, deltaY);
           newWidth = Math.max(20, start.width + maxDelta);
-          newHeight = Math.max(20, newWidth / aspectRatio);
+          newHeight = newWidth / aspectRatio;
         } else {
           newWidth = Math.max(20, start.width + deltaX);
           newHeight = Math.max(20, start.height + deltaY);
         }
       } else if (handle === "bl") {
+        // Anchor: top-right
         if (isProportional) {
           const maxDelta = Math.max(-deltaX, deltaY);
-          newWidth = Math.max(20, start.width - maxDelta);
-          newHeight = Math.max(20, newWidth / aspectRatio);
-          newX = start.x + maxDelta;
+          newWidth = Math.max(20, start.width + maxDelta);
+          newHeight = newWidth / aspectRatio;
         } else {
           newWidth = Math.max(20, start.width - deltaX);
           newHeight = Math.max(20, start.height + deltaY);
-          newX = start.x + deltaX;
         }
+
+        newX = start.x + (start.width - newWidth);
       } else if (handle === "tr") {
+        // Anchor: bottom-left
         if (isProportional) {
           const maxDelta = Math.max(deltaX, -deltaY);
           newWidth = Math.max(20, start.width + maxDelta);
-          newHeight = Math.max(20, newWidth / aspectRatio);
-          newY = start.y - maxDelta;
+          newHeight = newWidth / aspectRatio;
         } else {
           newWidth = Math.max(20, start.width + deltaX);
           newHeight = Math.max(20, start.height - deltaY);
-          newY = start.y + deltaY;
         }
+
+        newY = start.y + (start.height - newHeight);
       } else if (handle === "tl") {
+        // Anchor: bottom-right
         if (isProportional) {
           const maxDelta = Math.max(-deltaX, -deltaY);
-          newWidth = Math.max(20, start.width - maxDelta);
-          newHeight = Math.max(20, newWidth / aspectRatio);
-          newX = start.x + maxDelta;
-          newY = start.y + maxDelta;
+          newWidth = Math.max(20, start.width + maxDelta);
+          newHeight = newWidth / aspectRatio;
         } else {
           newWidth = Math.max(20, start.width - deltaX);
           newHeight = Math.max(20, start.height - deltaY);
-          newX = start.x + deltaX;
-          newY = start.y + deltaY;
         }
+
+        newX = start.x + (start.width - newWidth);
+        newY = start.y + (start.height - newHeight);
       } else if (handle === "r") {
+        // Anchor: left
         newWidth = Math.max(20, start.width + deltaX);
+
         if (isProportional) {
-          newHeight = Math.max(20, newWidth / aspectRatio);
+          newHeight = newWidth / aspectRatio;
+          const heightDiff = (start.height - newHeight) / 2;
+          newY = start.y + heightDiff;
         }
       } else if (handle === "l") {
+        // Anchor: right
         newWidth = Math.max(20, start.width - deltaX);
+
         if (isProportional) {
-          newHeight = Math.max(20, newWidth / aspectRatio);
-          newX = start.x + deltaX;
-        } else {
-          newX = start.x + deltaX;
+          newHeight = newWidth / aspectRatio;
+          const heightDiff = (start.height - newHeight) / 2;
+          newY = start.y + heightDiff;
         }
+
+        newX = start.x + (start.width - newWidth);
       } else if (handle === "b") {
+        // Anchor: top
         newHeight = Math.max(20, start.height + deltaY);
+
         if (isProportional) {
-          newWidth = Math.max(20, newHeight * aspectRatio);
+          newWidth = newHeight * aspectRatio;
+          const widthDiff = (start.width - newWidth) / 2;
+          newX = start.x + widthDiff;
         }
       } else if (handle === "t") {
+        // Anchor: bottom
         newHeight = Math.max(20, start.height - deltaY);
+
         if (isProportional) {
-          newWidth = Math.max(20, newHeight * aspectRatio);
-          newY = start.y + deltaY;
-        } else {
-          newY = start.y + deltaY;
+          newWidth = newHeight * aspectRatio;
+          const widthDiff = (start.width - newWidth) / 2;
+          newX = start.x + widthDiff;
         }
+
+        newY = start.y + (start.height - newHeight);
       }
 
       updateImagePositionAndDimensions(
@@ -463,19 +553,19 @@ export default function Canvas() {
       selectionBoxRef.current.currentX = mouseX;
       selectionBoxRef.current.currentY = mouseY;
 
+      setSelectionBox({
+        startX: selectionBoxRef.current.startX,
+        startY: selectionBoxRef.current.startY,
+        currentX: mouseX,
+        currentY: mouseY,
+      });
+
+      // Sélection images
       const minX = Math.min(selectionBoxRef.current.startX, mouseX);
       const minY = Math.min(selectionBoxRef.current.startY, mouseY);
       const maxX = Math.max(selectionBoxRef.current.startX, mouseX);
       const maxY = Math.max(selectionBoxRef.current.startY, mouseY);
 
-      setSelectionBox({
-        startX: minX,
-        startY: minY,
-        currentX: maxX,
-        currentY: maxY,
-      });
-
-      // Sélection images
       const selectedIds = images
         .filter(
           (img) =>
@@ -519,10 +609,74 @@ export default function Canvas() {
     panningRef.current.active = false;
     setIsPanning(false);
     draggingRef.current.active = false;
-    selectionBoxRef.current.active = false;
     resizingRef.current.active = false;
     rotatingRef.current.active = false;
+    stopAutoPan();
+    if (selectionBoxRef.current.active) {
+      const { startX, startY, currentX, currentY } = selectionBoxRef.current;
+
+      const minX = Math.min(startX, currentX);
+      const minY = Math.min(startY, currentY);
+      const maxX = Math.max(startX, currentX);
+      const maxY = Math.max(startY, currentY);
+
+      const selectedIds = images
+        .filter(
+          (img) =>
+            img.x + img.width > minX &&
+            img.x < maxX &&
+            img.y + img.height > minY &&
+            img.y < maxY,
+        )
+        .map((img) => img.id);
+
+      selectImages(selectedIds);
+    }
+
+    selectionBoxRef.current.active = false;
     setSelectionBox(null);
+  };
+
+  const startAutoPan = () => {
+    if (autoPanRef.current.rafId) return;
+
+    const maxSpeed = 20; // vitesse max fixe
+
+    const step = () => {
+      if (!autoPanRef.current.active) {
+        cancelAnimationFrame(autoPanRef.current.rafId);
+        autoPanRef.current.rafId = null;
+        return;
+      }
+
+      const moveX = autoPanRef.current.directionX * maxSpeed;
+      const moveY = autoPanRef.current.directionY * maxSpeed;
+
+      // 1️⃣ déplacer le canvas
+      setOffsetX((prev) => prev + moveX);
+      setOffsetY((prev) => prev + moveY);
+
+      // 2️⃣ si drag actif → compenser UNIQUEMENT les images
+      if (draggingRef.current.active) {
+        updateMultipleImagePositions(
+          draggingRef.current.imageIds,
+          -moveX / scaleRef.current,
+          -moveY / scaleRef.current,
+        );
+      }
+
+      autoPanRef.current.rafId = requestAnimationFrame(step);
+    };
+
+    autoPanRef.current.rafId = requestAnimationFrame(step);
+  };
+
+  const stopAutoPan = () => {
+    autoPanRef.current.active = false;
+    if (autoPanRef.current.rafId) {
+      cancelAnimationFrame(autoPanRef.current.rafId);
+      autoPanRef.current.rafId = null;
+    }
   };
 
   const handleCanvasClick = (e) => {
@@ -551,7 +705,6 @@ export default function Canvas() {
     }
 
     clearSelection();
-    setOpenPanel(null);
   };
 
   // Zoom
@@ -608,12 +761,6 @@ export default function Canvas() {
       window.removeEventListener("drop", handleWindowDrop);
     };
   }, []);
-
-  const handleRecenter = () => {
-    setOffsetX(0);
-    setOffsetY(0);
-    setScale(1);
-  };
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -677,208 +824,196 @@ export default function Canvas() {
   };
 
   return (
-    <div className="flex w-screen h-screen select-none">
-      <Toolbar
-        openPanel={openPanel}
-        setOpenPanel={setOpenPanel}
-        onRecenter={handleRecenter}
-        offsetX={offsetX}
-        offsetY={offsetY}
+    <div
+      ref={containerRef}
+      className={`flex-1 bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onClick={handleCanvasClick}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Grille */}
+      <div
+        className="absolute inset-0 opacity-5 pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(0deg, #fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+          backgroundSize: "50px 50px",
+        }}
       />
 
+      {/* Contenu avec offset & zoom */}
       <div
-        ref={containerRef}
-        className={`flex-1 bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onClick={handleCanvasClick}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        ref={contentRef}
+        className="absolute"
+        style={{
+          transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})`,
+          transformOrigin: "top left",
+          width: "1000000px",
+          height: "1000000px",
+        }}
       >
-        {/* Grille */}
-        <div
-          className="absolute inset-0 opacity-5 pointer-events-none"
-          style={{
-            backgroundImage:
-              "linear-gradient(0deg, #fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
+        {/* Box de sélection */}
+        {selectionBox && (
+          <div
+            className="absolute border-2 border-blue-500 bg-blue-500 opacity-20 pointer-events-none"
+            style={{
+              top: Math.min(selectionBox.startY, selectionBox.currentY),
+              left: Math.min(selectionBox.startX, selectionBox.currentX),
+              width: Math.abs(selectionBox.currentX - selectionBox.startX),
+              height: Math.abs(selectionBox.currentY - selectionBox.startY),
+            }}
+          />
+        )}
 
-        {/* Contenu avec offset & zoom */}
-        <div
-          ref={contentRef}
-          className="absolute"
-          style={{
-            transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})`,
-            transformOrigin: "top left",
-            width: "1000000px",
-            height: "1000000px",
-          }}
-        >
-          {/* Box de sélection */}
-          {selectionBox && (
-            <div
-              className="absolute border-2 border-blue-500 bg-blue-500 opacity-20 pointer-events-none"
-              style={{
-                top: selectionBox.startY,
-                left: selectionBox.startX,
-                width: selectionBox.currentX - selectionBox.startX,
-                height: selectionBox.currentY - selectionBox.startY,
-              }}
+        {/* Images */}
+        {images.map((img, index) => (
+          <div
+            key={img.id}
+            style={{
+              position: "absolute",
+              top: img.y,
+              left: img.x,
+              width: img.width,
+              height: img.height,
+              transform: `rotate(${img.rotation || 0}deg)`,
+              transformOrigin: "center center",
+              zIndex: selectedImageIds.includes(img.id) ? 1000 : index + 1,
+            }}
+          >
+            <img
+              src={img.url}
+              alt=""
+              draggable="false"
+              className={`absolute w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing ${
+                selectedImageIds.includes(img.id) ? "ring-2 ring-blue-500" : ""
+              }`}
             />
-          )}
 
-          {/* Images */}
-          {images.map((img) => (
-            <div
-              key={img.id}
-              style={{
-                position: "absolute",
-                top: img.y,
-                left: img.x,
-                width: img.width,
-                height: img.height,
-                transform: `rotate(${img.rotation || 0}deg)`,
-                transformOrigin: "center center",
-              }}
-            >
-              <img
-                src={img.url}
-                alt=""
-                draggable="false"
-                className={`absolute w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing ${
-                  selectedImageIds.includes(img.id)
-                    ? "ring-2 ring-blue-500"
-                    : ""
-                }`}
-              />
+            {/* Poignées de redimensionnement */}
+            {selectedImageIds.includes(img.id) && (
+              <>
+                {/* Top-left */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    top: "-4px",
+                    left: "-4px",
+                    borderRadius: "2px",
+                    cursor: "nwse-resize",
+                  }}
+                />
+                {/* Top-right */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    top: "-4px",
+                    right: "-4px",
+                    borderRadius: "2px",
+                    cursor: "nesw-resize",
+                  }}
+                />
+                {/* Bottom-left */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    bottom: "-4px",
+                    left: "-4px",
+                    borderRadius: "2px",
+                    cursor: "nesw-resize",
+                  }}
+                />
+                {/* Bottom-right */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    bottom: "-4px",
+                    right: "-4px",
+                    borderRadius: "2px",
+                    cursor: "nwse-resize",
+                  }}
+                />
+                {/* Top */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    top: "-4px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    borderRadius: "2px",
+                    cursor: "ns-resize",
+                  }}
+                />
+                {/* Bottom */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    bottom: "-4px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    borderRadius: "2px",
+                    cursor: "ns-resize",
+                  }}
+                />
+                {/* Left */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    left: "-4px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    borderRadius: "2px",
+                    cursor: "ew-resize",
+                  }}
+                />
+                {/* Right */}
+                <div
+                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
+                  style={{
+                    right: "-4px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    borderRadius: "2px",
+                    cursor: "ew-resize",
+                  }}
+                />
 
-              {/* Poignées de redimensionnement */}
-              {selectedImageIds.includes(img.id) && (
-                <>
-                  {/* Top-left */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      top: "-4px",
-                      left: "-4px",
-                      borderRadius: "2px",
-                      cursor: "nwse-resize",
-                    }}
+                {/* Trait et Handle de rotation */}
+                <svg
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: "0",
+                    top: "0",
+                    width: "100%",
+                    height: "100%",
+                    overflow: "visible",
+                  }}
+                >
+                  <line
+                    x1="50%"
+                    x2="50%"
+                    y2="-50"
+                    stroke="#3b82f6"
+                    strokeWidth="1"
+                    pointerEvents="none"
                   />
-                  {/* Top-right */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      top: "-4px",
-                      right: "-4px",
-                      borderRadius: "2px",
-                      cursor: "nesw-resize",
-                    }}
-                  />
-                  {/* Bottom-left */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      bottom: "-4px",
-                      left: "-4px",
-                      borderRadius: "2px",
-                      cursor: "nesw-resize",
-                    }}
-                  />
-                  {/* Bottom-right */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      bottom: "-4px",
-                      right: "-4px",
-                      borderRadius: "2px",
-                      cursor: "nwse-resize",
-                    }}
-                  />
-                  {/* Top */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      top: "-4px",
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      borderRadius: "2px",
-                      cursor: "ns-resize",
-                    }}
-                  />
-                  {/* Bottom */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      bottom: "-4px",
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      borderRadius: "2px",
-                      cursor: "ns-resize",
-                    }}
-                  />
-                  {/* Left */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      left: "-4px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      borderRadius: "2px",
-                      cursor: "ew-resize",
-                    }}
-                  />
-                  {/* Right */}
-                  <div
-                    className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                    style={{
-                      right: "-4px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      borderRadius: "2px",
-                      cursor: "ew-resize",
-                    }}
-                  />
+                </svg>
 
-                  {/* Trait et Handle de rotation */}
-                  <svg
-                    className="absolute pointer-events-none"
-                    style={{
-                      left: "0",
-                      top: "0",
-                      width: "100%",
-                      height: "100%",
-                      overflow: "visible",
-                    }}
-                  >
-                    <line
-                      x1="50%"
-                      x2="50%"
-                      y2="-50"
-                      stroke="#3b82f6"
-                      strokeWidth="1"
-                      pointerEvents="none"
-                    />
-                  </svg>
-
-                  <div
-                    className="absolute w-3 h-3 bg-blue-500 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
-                    style={{
-                      left: "50%",
-                      top: "-50px",
-                      transform: `translate(-50%, -50%) rotate(${-(img.rotation || 0)}deg)`,
-                      border: "2px solid white",
-                    }}
-                  />
-                </>
-              )}
-            </div>
-          ))}
-        </div>
+                <div
+                  className="absolute w-3 h-3 bg-blue-500 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
+                  style={{
+                    left: "50%",
+                    top: "-50px",
+                    transform: `translate(-50%, -50%) rotate(${-(img.rotation || 0)}deg)`,
+                    border: "2px solid white",
+                  }}
+                />
+              </>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
