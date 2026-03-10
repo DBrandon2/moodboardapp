@@ -16,7 +16,7 @@ function App() {
   };
 
   return (
-    <div className="flex w-screen h-screen select-none">
+    <div className="w-screen h-screen select-none relative">
       <Toolbar
         openPanel={openPanel}
         setOpenPanel={setOpenPanel}
@@ -25,6 +25,7 @@ function App() {
         offsetY={offsetY}
       />
       <Canvas
+        className="w-full h-full"
         offsetX={offsetX}
         setOffsetX={setOffsetX}
         offsetY={offsetY}

@@ -50,7 +50,7 @@ export default function Toolbar({
   };
 
   return (
-    <div className="w-16 bg-gray-800 h-full flex flex-col items-center py-4 gap-4 border-r border-gray-700 relative">
+    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto">
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {
@@ -75,7 +75,7 @@ export default function Toolbar({
       {/* Panel URL séparé du bouton */}
       {openPanel === "url" && (
         <div
-          className="absolute left-20 top-2 bg-gray-700 p-4 rounded shadow-lg flex flex-col gap-2 w-80 z-50"
+          className="absolute left-4 top-20 bg-gray-700 p-4 rounded shadow-lg flex flex-col gap-2 w-80 z-50 md:left-20 md:top-2"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex w-full">

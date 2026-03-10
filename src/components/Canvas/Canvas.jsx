@@ -8,6 +8,7 @@ export default function Canvas({
   setOffsetY,
   scale,
   setScale,
+  className = "",
 }) {
   const images = useBoardStore((state) => state.images);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
@@ -826,7 +827,7 @@ export default function Canvas({
   return (
     <div
       ref={containerRef}
-      className={`flex-1 bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
+      className={`${className} bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
