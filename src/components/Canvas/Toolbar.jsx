@@ -34,6 +34,8 @@ export default function Toolbar({
         y: screenCenterY - offsetY - height / 2,
         width,
         height,
+        originalWidth: img.width,
+        originalHeight: img.height,
       });
       setUrl("");
       setOpenPanel(null);
@@ -62,7 +64,7 @@ export default function Toolbar({
       >
         <FiCompass />
       </button>
-      
+
       {/* Bouton URL */}
       <button
         onClick={(e) => handlePanelToggle("url", e)}
@@ -100,7 +102,6 @@ export default function Toolbar({
           </div>
         </div>
       )}
-
     </div>
   );
 }

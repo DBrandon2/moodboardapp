@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../../store/boardStore";
+import { FiCopy, FiTrash } from "react-icons/fi";
+import { RiFlipHorizontalLine, RiFlipVerticalLine } from "react-icons/ri";
 
 export default function Canvas({
   offsetX,
@@ -26,8 +28,42 @@ export default function Canvas({
   const undo = useBoardStore((state) => state.undo);
   const selectImages = useBoardStore((state) => state.selectImages);
   const clearSelection = useBoardStore((state) => state.clearSelection);
+  const removeImages = useBoardStore((state) => state.removeImages);
+  const duplicateImages = useBoardStore((state) => state.duplicateImages);
+  const flipHorizontal = useBoardStore((state) => state.flipHorizontal);
+  const flipVertical = useBoardStore((state) => state.flipVertical);
 
   const [isPanning, setIsPanning] = useState(false);
+
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    imageId: null,
+  });
+
+  const closeContextMenu = () => {
+    setContextMenu({ visible: false, x: 0, y: 0, imageId: null });
+  };
+
+  // Fermer le menu contextuel si clic en dehors
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      // Ne pas fermer si clic sur le menu contextuel ou ses enfants
+      if (e.target.closest("[data-context-menu]")) {
+        return;
+      }
+      // Fermer le menu pour tout autre clic
+      if (contextMenu.visible) {
+        closeContextMenu();
+      }
+    };
+
+    if (contextMenu.visible) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [contextMenu.visible]);
 
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -39,6 +75,20 @@ export default function Canvas({
 
   const mouseMoveHandlerRef = useRef(null);
   const mouseUpHandlerRef = useRef(null);
+
+  // Refs pour accéder aux valeurs actuelles sans dépendances
+  const selectedImageIdsRef = useRef(selectedImageIds);
+  const saveHistoryRef = useRef(saveHistory);
+  const removeImagesRef = useRef(removeImages);
+  const undoRef = useRef(undo);
+
+  // Mettre à jour les refs quand les valeurs changent
+  useEffect(() => {
+    selectedImageIdsRef.current = selectedImageIds;
+    saveHistoryRef.current = saveHistory;
+    removeImagesRef.current = removeImages;
+    undoRef.current = undo;
+  }, [selectedImageIds, saveHistory, removeImages, undo]);
 
   // Boîte de sélection
   const selectionBoxRef = useRef({
@@ -130,6 +180,8 @@ export default function Canvas({
             y: centerY - (img.height * scaleImg) / 2,
             width: img.width * scaleImg,
             height: img.height * scaleImg,
+            originalWidth: img.width,
+            originalHeight: img.height,
           });
         };
       };
@@ -147,7 +199,13 @@ export default function Canvas({
 
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
-        undo();
+        undoRef.current();
+      }
+
+      if (e.key === "Delete" && selectedImageIdsRef.current.length > 0) {
+        e.preventDefault();
+        saveHistoryRef.current();
+        removeImagesRef.current(selectedImageIdsRef.current);
       }
     };
 
@@ -162,7 +220,7 @@ export default function Canvas({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [undo]);
+  }, []);
 
   // Attacher mousemove et mouseup à window pour tracker même hors du canvas
   useEffect(() => {
@@ -337,14 +395,46 @@ export default function Canvas({
       }
     }
 
-    // Clic droit : panning
+    // Clic droit
     if (e.button === 2) {
-      panningRef.current.active = true;
-      setIsPanning(true);
-      panningRef.current.startX = e.clientX;
-      panningRef.current.startY = e.clientY;
-      panningRef.current.prevOffsetX = offsetRef.current.x;
-      panningRef.current.prevOffsetY = offsetRef.current.y;
+      // Vérifier si clic sur image
+      let clickedImageId = null;
+      for (let i = images.length - 1; i >= 0; i--) {
+        const img = images[i];
+        const local = getLocalPoint(mouseX, mouseY, img);
+
+        if (
+          local.x >= 0 &&
+          local.x <= img.width &&
+          local.y >= 0 &&
+          local.y <= img.height
+        ) {
+          clickedImageId = img.id;
+          break;
+        }
+      }
+
+      if (clickedImageId) {
+        // Menu contextuel
+        e.preventDefault();
+        if (!selectedImageIds.includes(clickedImageId)) {
+          selectImages([clickedImageId]);
+        }
+        setContextMenu({
+          visible: true,
+          x: e.clientX,
+          y: e.clientY,
+          imageId: clickedImageId,
+        });
+      } else {
+        // Panning
+        panningRef.current.active = true;
+        setIsPanning(true);
+        panningRef.current.startX = e.clientX;
+        panningRef.current.startY = e.clientY;
+        panningRef.current.prevOffsetX = offsetRef.current.x;
+        panningRef.current.prevOffsetY = offsetRef.current.y;
+      }
     }
   };
 
@@ -681,6 +771,9 @@ export default function Canvas({
   };
 
   const handleCanvasClick = (e) => {
+    if (e.button === 2) return; // Ignorer le clic droit
+    if (e.target.closest("[data-context-menu]")) return; // Ignorer les clics sur le menu contextuel
+
     const dragDistance = Math.hypot(
       e.clientX - dragStartRef.current.x,
       e.clientY - dragStartRef.current.y,
@@ -798,6 +891,8 @@ export default function Canvas({
             y: dropY - (img.height * scaleImg) / 2,
             width: img.width * scaleImg,
             height: img.height * scaleImg,
+            originalWidth: img.width,
+            originalHeight: img.height,
           });
         };
       };
@@ -817,6 +912,8 @@ export default function Canvas({
             y: dropY - (img.height * scaleImg) / 2,
             width: img.width * scaleImg,
             height: img.height * scaleImg,
+            originalWidth: img.width,
+            originalHeight: img.height,
           });
         };
         img.src = url;
@@ -827,7 +924,7 @@ export default function Canvas({
   return (
     <div
       ref={containerRef}
-      className={`${className} bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
+      className={`${className} bg-gray-900 overflow-hidden relative ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -891,6 +988,10 @@ export default function Canvas({
               className={`absolute w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing ${
                 selectedImageIds.includes(img.id) ? "ring-2 ring-blue-500" : ""
               }`}
+              style={{
+                transform: `scaleX(${img.flipH ? -1 : 1}) scaleY(${img.flipV ? -1 : 1})`,
+                transformOrigin: "center center",
+              }}
             />
 
             {/* Poignées de redimensionnement */}
@@ -1016,6 +1117,84 @@ export default function Canvas({
           </div>
         ))}
       </div>
+
+      {/* Overlay pour le menu contextuel */}
+      {contextMenu.visible && (
+        <div className="fixed inset-0 z-[2999]" onClick={closeContextMenu} />
+      )}
+
+      {/* Menu contextuel */}
+      {contextMenu.visible && (
+        <div
+          data-context-menu
+          className="fixed bg-amber-50 border border-gray-300 rounded-lg shadow-xl py-2 z-[3000] min-w-48 pointer-events-auto"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            pointerEvents: "auto",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              saveHistory();
+              duplicateImages(selectedImageIds);
+              closeContextMenu();
+            }}
+          >
+            <FiCopy className="mr-3" />
+            Dupliquer
+          </button>
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              saveHistory();
+              flipHorizontal(selectedImageIds);
+              closeContextMenu();
+            }}
+          >
+            <RiFlipHorizontalLine className="mr-3" />
+            Flip Horizontal
+          </button>
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              saveHistory();
+              flipVertical(selectedImageIds);
+              closeContextMenu();
+            }}
+          >
+            <RiFlipVerticalLine className="mr-3" />
+            Flip Vertical
+          </button>
+          <div className="border-t border-gray-300 my-1"></div>
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              saveHistory();
+              removeImages(selectedImageIds);
+              closeContextMenu();
+            }}
+          >
+            <FiTrash className="mr-3" />
+            Supprimer
+          </button>
+        </div>
+      )}
     </div>
   );
 }

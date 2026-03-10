@@ -143,4 +143,85 @@ export const useBoardStore = create((set) => ({
       future: [],
     }));
   },
+
+  removeImages: (imageIds) => {
+    set((state) => ({
+      images: state.images.filter((img) => !imageIds.includes(img.id)),
+      selectedImageIds: state.selectedImageIds.filter(
+        (id) => !imageIds.includes(id),
+      ),
+      future: [],
+    }));
+  },
+
+  duplicateImages: (imageIds) => {
+    set((state) => {
+      const newImages = [];
+      imageIds.forEach((id) => {
+        const img = state.images.find((i) => i.id === id);
+        if (img) {
+          newImages.push({
+            ...img,
+            id: uuidv4(),
+            x: img.x + 20,
+            y: img.y + 20,
+          });
+        }
+      });
+
+      return {
+        images: [...state.images, ...newImages],
+        selectedImageIds: newImages.map((img) => img.id),
+        future: [],
+      };
+    });
+  },
+
+  bringToFront: (imageIds) => {
+    set((state) => {
+      const frontImages = state.images.filter((img) =>
+        imageIds.includes(img.id),
+      );
+      const otherImages = state.images.filter(
+        (img) => !imageIds.includes(img.id),
+      );
+      return {
+        images: [...otherImages, ...frontImages],
+        future: [],
+      };
+    });
+  },
+
+  sendToBack: (imageIds) => {
+    set((state) => {
+      const backImages = state.images.filter((img) =>
+        imageIds.includes(img.id),
+      );
+      const otherImages = state.images.filter(
+        (img) => !imageIds.includes(img.id),
+      );
+      return {
+        images: [...backImages, ...otherImages],
+        future: [],
+      };
+    });
+  },
+
+  flipHorizontal: (imageIds) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        imageIds.includes(img.id) ? { ...img, flipH: !img.flipH } : img,
+      ),
+      future: [],
+    }));
+  },
+
+  flipVertical: (imageIds) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        imageIds.includes(img.id) ? { ...img, flipV: !img.flipV } : img,
+      ),
+      future: [],
+    }));
+  },
 }));
