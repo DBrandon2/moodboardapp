@@ -35,6 +35,8 @@ export default function Canvas({
   const resetSize = useBoardStore((state) => state.resetSize);
 
   const [isPanning, setIsPanning] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const spacePressedRef = useRef(false);
 
   const [contextMenu, setContextMenu] = useState({
     visible: false,
@@ -155,6 +157,35 @@ export default function Canvas({
     scaleRef.current = scale;
   }, [scale]);
 
+  // Helper pour copier l'image sélectionnée dans le clipboard
+  const copySelectedImage = () => {
+    if (selectedImageIdsRef.current.length === 0) return;
+    const selectedImage = imagesRef.current.find(
+      (img) => img.id === selectedImageIdsRef.current[0],
+    );
+    if (selectedImage) {
+      const imgElement = new Image();
+      imgElement.crossOrigin = "anonymous";
+      imgElement.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = imgElement.naturalWidth;
+        canvas.height = imgElement.naturalHeight;
+        ctx.drawImage(imgElement, 0, 0);
+
+        canvas.toBlob((blob) => {
+          if (blob && navigator.clipboard && navigator.clipboard.write) {
+            const item = new ClipboardItem({ "image/png": blob });
+            navigator.clipboard.write([item]).catch((err) => {
+              console.error("Failed to copy image:", err);
+            });
+          }
+        });
+      };
+      imgElement.src = selectedImage.url;
+    }
+  };
+
   // Coller image depuis clipboard
   useEffect(() => {
     const handlePaste = (e) => {
@@ -199,6 +230,13 @@ export default function Canvas({
   useEffect(() => {
     const handleKeyDown = (e) => {
       ctrlPressedRef.current = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (e.key === " " || e.key === "Spacebar") {
+        setSpacePressed(true);
+        spacePressedRef.current = true;
+        if (containerRef.current && !panningRef.current.active) {
+          containerRef.current.style.cursor = "grab";
+        }
+      }
 
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
@@ -211,36 +249,7 @@ export default function Canvas({
         selectedImageIdsRef.current.length > 0
       ) {
         e.preventDefault();
-        const selectedImage = imagesRef.current.find(
-          (img) => img.id === selectedImageIdsRef.current[0],
-        );
-        if (selectedImage) {
-          // Copier l'image elle-même dans le clipboard
-          const imgElement = new Image();
-          imgElement.crossOrigin = "anonymous";
-          imgElement.onload = () => {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            canvas.width = imgElement.naturalWidth;
-            canvas.height = imgElement.naturalHeight;
-            ctx.drawImage(imgElement, 0, 0);
-
-            canvas.toBlob((blob) => {
-              if (blob && navigator.clipboard && navigator.clipboard.write) {
-                const item = new ClipboardItem({ "image/png": blob });
-                navigator.clipboard
-                  .write([item])
-                  .then(() => {
-                    console.log("Image copied to clipboard");
-                  })
-                  .catch((err) => {
-                    console.error("Failed to copy image:", err);
-                  });
-              }
-            });
-          };
-          imgElement.src = selectedImage.url;
-        }
+        copySelectedImage();
       }
 
       if (e.key === "Delete" && selectedImageIdsRef.current.length > 0) {
@@ -252,8 +261,14 @@ export default function Canvas({
 
     const handleKeyUp = (e) => {
       ctrlPressedRef.current = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (e.key === " " || e.key === "Spacebar") {
+        setSpacePressed(false);
+        spacePressedRef.current = false;
+        if (containerRef.current && !panningRef.current.active) {
+          containerRef.current.style.cursor = "default";
+        }
+      }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
@@ -351,6 +366,18 @@ export default function Canvas({
       (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
     const mouseY =
       (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+
+    // espace + clic gauche déclenche le panoramique
+    if (e.button === 0 && spacePressedRef.current) {
+      e.preventDefault();
+      panningRef.current.active = true;
+      setIsPanning(true);
+      panningRef.current.startX = e.clientX;
+      panningRef.current.startY = e.clientY;
+      panningRef.current.prevOffsetX = offsetRef.current.x;
+      panningRef.current.prevOffsetY = offsetRef.current.y;
+      return;
+    }
 
     if (e.button === 0) {
       // Vérifier si clic sur le handle de rotation d'une image sélectionnée
@@ -471,6 +498,8 @@ export default function Canvas({
         // Panning
         panningRef.current.active = true;
         setIsPanning(true);
+        if (containerRef.current)
+          containerRef.current.style.cursor = "grabbing";
         panningRef.current.startX = e.clientX;
         panningRef.current.startY = e.clientY;
         panningRef.current.prevOffsetX = offsetRef.current.x;
@@ -740,6 +769,12 @@ export default function Canvas({
   const handleMouseUp = () => {
     panningRef.current.active = false;
     setIsPanning(false);
+    if (containerRef.current) {
+      // restore based on space or default
+      containerRef.current.style.cursor = spacePressedRef.current
+        ? "grab"
+        : "default";
+    }
     draggingRef.current.active = false;
     resizingRef.current.active = false;
     rotatingRef.current.active = false;
@@ -1177,6 +1212,19 @@ export default function Canvas({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              copySelectedImage();
+              closeContextMenu();
+            }}
+          >
+            <FiCopy className="mr-3" />
+            Copier
+          </button>
           <button
             className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
             onMouseDown={(e) => e.stopPropagation()}
