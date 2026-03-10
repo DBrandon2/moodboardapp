@@ -224,4 +224,19 @@ export const useBoardStore = create((set) => ({
       future: [],
     }));
   },
+
+  resetSize: (imageIds) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        imageIds.includes(img.id)
+          ? {
+              ...img,
+              width: img.originalWidth || img.width,
+              height: img.originalHeight || img.height,
+            }
+          : img,
+      ),
+      future: [],
+    }));
+  },
 }));

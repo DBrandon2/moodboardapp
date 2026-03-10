@@ -32,6 +32,7 @@ export default function Canvas({
   const duplicateImages = useBoardStore((state) => state.duplicateImages);
   const flipHorizontal = useBoardStore((state) => state.flipHorizontal);
   const flipVertical = useBoardStore((state) => state.flipVertical);
+  const resetSize = useBoardStore((state) => state.resetSize);
 
   const [isPanning, setIsPanning] = useState(false);
 
@@ -81,6 +82,7 @@ export default function Canvas({
   const saveHistoryRef = useRef(saveHistory);
   const removeImagesRef = useRef(removeImages);
   const undoRef = useRef(undo);
+  const imagesRef = useRef(images);
 
   // Mettre à jour les refs quand les valeurs changent
   useEffect(() => {
@@ -88,7 +90,8 @@ export default function Canvas({
     saveHistoryRef.current = saveHistory;
     removeImagesRef.current = removeImages;
     undoRef.current = undo;
-  }, [selectedImageIds, saveHistory, removeImages, undo]);
+    imagesRef.current = images;
+  }, [selectedImageIds, saveHistory, removeImages, undo, images]);
 
   // Boîte de sélection
   const selectionBoxRef = useRef({
@@ -200,6 +203,44 @@ export default function Canvas({
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
         undoRef.current();
+      }
+
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key === "c" &&
+        selectedImageIdsRef.current.length > 0
+      ) {
+        e.preventDefault();
+        const selectedImage = imagesRef.current.find(
+          (img) => img.id === selectedImageIdsRef.current[0],
+        );
+        if (selectedImage) {
+          // Copier l'image elle-même dans le clipboard
+          const imgElement = new Image();
+          imgElement.crossOrigin = "anonymous";
+          imgElement.onload = () => {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            canvas.width = imgElement.naturalWidth;
+            canvas.height = imgElement.naturalHeight;
+            ctx.drawImage(imgElement, 0, 0);
+
+            canvas.toBlob((blob) => {
+              if (blob && navigator.clipboard && navigator.clipboard.write) {
+                const item = new ClipboardItem({ "image/png": blob });
+                navigator.clipboard
+                  .write([item])
+                  .then(() => {
+                    console.log("Image copied to clipboard");
+                  })
+                  .catch((err) => {
+                    console.error("Failed to copy image:", err);
+                  });
+              }
+            });
+          };
+          imgElement.src = selectedImage.url;
+        }
       }
 
       if (e.key === "Delete" && selectedImageIdsRef.current.length > 0) {
@@ -1177,6 +1218,20 @@ export default function Canvas({
           >
             <RiFlipVerticalLine className="mr-3" />
             Flip Vertical
+          </button>
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              saveHistory();
+              resetSize(selectedImageIds);
+              closeContextMenu();
+            }}
+          >
+            <FiCopy className="mr-3" />
+            Taille originale
           </button>
           <div className="border-t border-gray-300 my-1"></div>
           <button
