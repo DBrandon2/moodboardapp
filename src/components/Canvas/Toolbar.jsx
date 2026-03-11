@@ -6,9 +6,26 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
+  const [isMobile, setIsMobile] = useState(false);
   const fileInputRef = useRef(null);
   const addButtonRef = useRef(null);
   const addImage = useBoardStore((state) => state.addimage);
+
+  // Détecter si mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile =
+        window.innerWidth < 768 ||
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent,
+        );
+      setIsMobile(mobile);
+    };
+
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   const handleAddImage = () => {
     if (!url) return;
@@ -52,7 +69,10 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       const padding = 8;
       let left = rect.left + rect.width / 2 - menuWidth / 2;
       // clamp horizontally
-      left = Math.max(padding, Math.min(left, window.innerWidth - padding - menuWidth));
+      left = Math.max(
+        padding,
+        Math.min(left, window.innerWidth - padding - menuWidth),
+      );
       const top = rect.bottom + 8;
       setMenuPos({ left, top });
     }
@@ -68,19 +88,23 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
     };
     if (addMenuOpen) {
       document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+      return () => {
+        document.removeEventListener("click", handleClickOutside);
+        document.removeEventListener("touchstart", handleClickOutside);
+      };
     }
   }, [addMenuOpen]);
 
   return (
-    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto">
+    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-2 sm:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto touch-none">
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onRecenter();
         }}
-        className="text-white text-3xl p-2 hover:bg-gray-700 rounded transition-colors"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Recentrer"
       >
         <FiCompass />
@@ -90,7 +114,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       <button
         ref={addButtonRef}
         onClick={handleAddMenuToggle}
-        className="text-white text-3xl p-2 hover:bg-gray-700 rounded transition-colors"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Ajouter une image"
       >
         <FiPlus />
@@ -102,33 +126,36 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
           data-add-menu
           style={{
             animation: "menu-appear 0.18s ease-out forwards",
-            left: menuPos.left,
-            top: menuPos.top
+            left: isMobile ? "50%" : menuPos.left,
+            top: isMobile ? "50%" : menuPos.top,
+            transform: isMobile ? "translate(-50%, -50%)" : "none",
           }}
-          className="fixed bg-amber-50 border border-gray-300 rounded-lg shadow-xl py-4 px-6 z-50 w-80
+          className="fixed bg-amber-50 border border-gray-300 rounded-lg shadow-xl py-4 px-6 z-50 w-80 max-w-[90%] sm:w-80
             transform origin-top center"
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="text-gray-900 font-semibold mb-2">Ajouter une image</p>
+          <p className="text-gray-900 font-semibold mb-3 text-lg">
+            Ajouter une image
+          </p>
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={handleKeyDown}
             autoFocus
             type="text"
-            placeholder="https://... (ou Ctrl+V)"
-            className="px-3 py-2 rounded text-gray-900 border border-gray-400 w-full mb-3"
+            placeholder={isMobile ? "https://..." : "https://... (ou Ctrl+V)"}
+            className="px-4 py-3 rounded text-gray-900 border border-gray-400 w-full mb-4 text-base"
           />
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row gap-2 justify-between">
             <button
               onClick={handleAddImage}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors font-medium"
+              className="flex items-center justify-center px-4 py-3 bg-gray-800 text-white rounded hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none"
             >
               <FiLink className="mr-2" /> URL
             </button>
             <button
               onClick={() => fileInputRef.current.click()}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors font-medium"
+              className="flex items-center justify-center px-4 py-3 bg-gray-800 text-white rounded hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none"
             >
               <FiUpload className="mr-2" /> Fichier
             </button>

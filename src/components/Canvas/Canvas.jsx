@@ -35,7 +35,6 @@ export default function Canvas({
   const resetSize = useBoardStore((state) => state.resetSize);
 
   const [isPanning, setIsPanning] = useState(false);
-  const [spacePressed, setSpacePressed] = useState(false);
   const spacePressedRef = useRef(false);
 
   const [contextMenu, setContextMenu] = useState({
@@ -44,6 +43,12 @@ export default function Canvas({
     y: 0,
     imageId: null,
   });
+
+  // Touch handling refs
+  const touchesRef = useRef([]);
+  const longPressTimeoutRef = useRef(null);
+  const initialPinchDistanceRef = useRef(0);
+  const initialPinchScaleRef = useRef(1);
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, imageId: null });
@@ -64,7 +69,11 @@ export default function Canvas({
 
     if (contextMenu.visible) {
       document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+      return () => {
+        document.removeEventListener("click", handleClickOutside);
+        document.removeEventListener("touchstart", handleClickOutside);
+      };
     }
   }, [contextMenu.visible]);
 
@@ -231,7 +240,6 @@ export default function Canvas({
     const handleKeyDown = (e) => {
       ctrlPressedRef.current = e.ctrlKey || e.metaKey || e.shiftKey;
       if (e.key === " " || e.key === "Spacebar") {
-        setSpacePressed(true);
         spacePressedRef.current = true;
         if (containerRef.current && !panningRef.current.active) {
           containerRef.current.style.cursor = "grab";
@@ -262,7 +270,6 @@ export default function Canvas({
     const handleKeyUp = (e) => {
       ctrlPressedRef.current = e.ctrlKey || e.metaKey || e.shiftKey;
       if (e.key === " " || e.key === "Spacebar") {
-        setSpacePressed(false);
         spacePressedRef.current = false;
         if (containerRef.current && !panningRef.current.active) {
           containerRef.current.style.cursor = "default";
@@ -304,6 +311,156 @@ export default function Canvas({
       window.removeEventListener("mouseup", handleDocumentMouseUp);
     };
   }, []);
+
+  // Fonctions helper pour tactile
+  const getDistance = (touch1, touch2) => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getMidpoint = (touch1, touch2) => {
+    return {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2,
+    };
+  };
+
+  const handleTouchStart = (e) => {
+    // Ignorer si le menu est ouvert
+    if (contextMenu.visible) return;
+    if (e.target.closest(".toolbar")) return;
+
+    touchesRef.current = Array.from(e.touches);
+
+    if (e.touches.length === 1) {
+      // Single touch - start long press timer
+      const touch = e.touches[0];
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX =
+        (touch.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+      const mouseY =
+        (touch.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+
+      longPressTimeoutRef.current = setTimeout(() => {
+        // Long press detected
+        for (let i = images.length - 1; i >= 0; i--) {
+          const img = images[i];
+          const local = getLocalPoint(mouseX, mouseY, img);
+
+          if (
+            local.x >= 0 &&
+            local.x <= img.width &&
+            local.y >= 0 &&
+            local.y <= img.height
+          ) {
+            if (!selectedImageIds.includes(img.id)) {
+              selectImages([img.id]);
+            }
+            setContextMenu({
+              visible: true,
+              x: touch.clientX,
+              y: touch.clientY,
+              imageId: img.id,
+            });
+            break;
+          }
+        }
+      }, 500);
+
+      // Procéder au drag ou sélection normalement
+      handleMouseDown({
+        ...e,
+        button: 0,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        touches: e.touches,
+        preventDefault: () => e.preventDefault(),
+      });
+    } else if (e.touches.length === 2) {
+      // Two fingers - prepare for pinch or panning
+      clearTimeout(longPressTimeoutRef.current);
+      initialPinchDistanceRef.current = getDistance(e.touches[0], e.touches[1]);
+      initialPinchScaleRef.current = scaleRef.current;
+
+      // Start two-finger pan
+      panningRef.current.active = true;
+      setIsPanning(true);
+      panningRef.current.startX = getMidpoint(e.touches[0], e.touches[1]).x;
+      panningRef.current.startY = getMidpoint(e.touches[0], e.touches[1]).y;
+      panningRef.current.prevOffsetX = offsetRef.current.x;
+      panningRef.current.prevOffsetY = offsetRef.current.y;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    touchesRef.current = Array.from(e.touches);
+
+    if (e.touches.length === 1) {
+      // Single touch - treat as mouse move
+      const touch = e.touches[0];
+      handleMouseMove({
+        ...e,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        touches: e.touches,
+      });
+    } else if (e.touches.length === 2) {
+      // Two fingers - pinch zoom or two-finger pan
+      const currentDistance = getDistance(e.touches[0], e.touches[1]);
+      const distanceRatio = currentDistance / initialPinchDistanceRef.current;
+
+      // Vérifier si c'est un pinch (changement de distance > 5%)
+      if (Math.abs(distanceRatio - 1) > 0.05) {
+        // Pinch zoom
+        clearTimeout(longPressTimeoutRef.current);
+        const newScale = Math.min(
+          Math.max(initialPinchScaleRef.current * distanceRatio, 0.1),
+          4,
+        );
+
+        const midpoint = getMidpoint(e.touches[0], e.touches[1]);
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = midpoint.x - rect.left;
+        const mouseY = midpoint.y - rect.top;
+
+        const offsetXNew =
+          mouseX -
+          ((mouseX - offsetRef.current.x) * newScale) / scaleRef.current;
+        const offsetYNew =
+          mouseY -
+          ((mouseY - offsetRef.current.y) * newScale) / scaleRef.current;
+
+        setScale(newScale);
+        setOffsetX(offsetXNew);
+        setOffsetY(offsetYNew);
+      } else {
+        // Two-finger pan
+        const midpoint = getMidpoint(e.touches[0], e.touches[1]);
+        const dx = midpoint.x - panningRef.current.startX;
+        const dy = midpoint.y - panningRef.current.startY;
+        setOffsetX(panningRef.current.prevOffsetX + dx);
+        setOffsetY(panningRef.current.prevOffsetY + dy);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length === 0) {
+      // All touches released
+      clearTimeout(longPressTimeoutRef.current);
+      panningRef.current.active = false;
+      setIsPanning(false);
+      touchesRef.current = [];
+    } else if (e.touches.length === 1) {
+      // One touch remains - treat as new touch
+      initialPinchDistanceRef.current = 0;
+      panningRef.current.active = false;
+      setIsPanning(false);
+    }
+
+    handleMouseUp();
+  };
 
   const getResizeHandleAtPoint = (mouseX, mouseY, imageId) => {
     const img = images.find((i) => i.id === imageId);
@@ -909,7 +1066,7 @@ export default function Canvas({
         container.removeEventListener("contextmenu", (e) => e.preventDefault());
       };
     }
-  }, []);
+  }, [setScale, setOffsetX, setOffsetY]);
 
   // Empêcher le navigateur d'ouvrir les fichiers directement
   useEffect(() => {
@@ -1007,6 +1164,14 @@ export default function Canvas({
       onClick={handleCanvasClick}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        touchAction: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+      }}
     >
       {/* Grille */}
       <div
