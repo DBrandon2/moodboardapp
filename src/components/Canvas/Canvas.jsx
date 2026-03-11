@@ -462,13 +462,38 @@ export default function Canvas({
     handleMouseUp();
   };
 
+  // Calculer la taille optimale du handle en fonction du zoom du canvas
+  // Les handles auront toujours la même taille visuelle peu importe le zoom ou la taille de l'image
+  const getHandleSize = (currentScale) => {
+    // Taille de base des handles à zoom 1x (100%)
+    const baseHandleSize = 12; // pixels
+
+    // Adapter à l'inverse du zoom pour que les handles restent visuellement constants
+    // À zoom 0.5x → handles 2x plus gros visiblement (24px) pour rester lisibles
+    // À zoom 2x → handles 0.5x (6px) car déjà gros visuellement
+    let handleSize = baseHandleSize / currentScale;
+
+    // Limiter entre min et max pour plus de confort
+    handleSize = Math.max(handleSize, 8); // Min 8px (même très zoomé)
+    handleSize = Math.min(handleSize, 24); // Max 24px (même très dézoomé)
+
+    // Mobile : augmenter la base de 50% pour meilleur tactile
+    if (window.innerWidth < 768) {
+      handleSize = handleSize * 1.5;
+      handleSize = Math.max(handleSize, 12); // Min 12px sur mobile
+      handleSize = Math.min(handleSize, 36); // Max 36px sur mobile
+    }
+
+    return Math.round(handleSize);
+  };
+
   const getResizeHandleAtPoint = (mouseX, mouseY, imageId) => {
     const img = images.find((i) => i.id === imageId);
     if (!img) return null;
 
     const local = getLocalPoint(mouseX, mouseY, img);
 
-    const handleSize = 8;
+    const handleSize = getHandleSize(scale);
 
     const handles = [
       { key: "tl", x: 0, y: 0 },
@@ -504,7 +529,7 @@ export default function Canvas({
     const handleX = img.width / 2;
     const handleY = -50;
 
-    const handleSize = 12;
+    const handleSize = Math.ceil(getHandleSize(scale) / 2);
 
     return (
       local.x >= handleX - handleSize &&
@@ -1236,125 +1261,149 @@ export default function Canvas({
             />
 
             {/* Poignées de redimensionnement */}
-            {selectedImageIds.includes(img.id) && (
-              <>
-                {/* Top-left */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    top: "-4px",
-                    left: "-4px",
-                    borderRadius: "2px",
-                    cursor: "nwse-resize",
-                  }}
-                />
-                {/* Top-right */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    top: "-4px",
-                    right: "-4px",
-                    borderRadius: "2px",
-                    cursor: "nesw-resize",
-                  }}
-                />
-                {/* Bottom-left */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    bottom: "-4px",
-                    left: "-4px",
-                    borderRadius: "2px",
-                    cursor: "nesw-resize",
-                  }}
-                />
-                {/* Bottom-right */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    bottom: "-4px",
-                    right: "-4px",
-                    borderRadius: "2px",
-                    cursor: "nwse-resize",
-                  }}
-                />
-                {/* Top */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    top: "-4px",
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    borderRadius: "2px",
-                    cursor: "ns-resize",
-                  }}
-                />
-                {/* Bottom */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    bottom: "-4px",
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    borderRadius: "2px",
-                    cursor: "ns-resize",
-                  }}
-                />
-                {/* Left */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    left: "-4px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    borderRadius: "2px",
-                    cursor: "ew-resize",
-                  }}
-                />
-                {/* Right */}
-                <div
-                  className="absolute w-2 h-2 bg-blue-500 pointer-events-auto"
-                  style={{
-                    right: "-4px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    borderRadius: "2px",
-                    cursor: "ew-resize",
-                  }}
-                />
+            {selectedImageIds.includes(img.id) &&
+              (() => {
+                const handleSize = getHandleSize(scale);
+                const handleOffset = Math.ceil(handleSize / 2);
 
-                {/* Trait et Handle de rotation */}
-                <svg
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: "0",
-                    top: "0",
-                    width: "100%",
-                    height: "100%",
-                    overflow: "visible",
-                  }}
-                >
-                  <line
-                    x1="50%"
-                    x2="50%"
-                    y2="-50"
-                    stroke="#3b82f6"
-                    strokeWidth="1"
-                    pointerEvents="none"
-                  />
-                </svg>
+                return (
+                  <>
+                    {/* Top-left */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        top: `-${handleOffset}px`,
+                        left: `-${handleOffset}px`,
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "nwse-resize",
+                      }}
+                    />
+                    {/* Top-right */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        top: `-${handleOffset}px`,
+                        right: `-${handleOffset}px`,
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "nesw-resize",
+                      }}
+                    />
+                    {/* Bottom-left */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        bottom: `-${handleOffset}px`,
+                        left: `-${handleOffset}px`,
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "nesw-resize",
+                      }}
+                    />
+                    {/* Bottom-right */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        bottom: `-${handleOffset}px`,
+                        right: `-${handleOffset}px`,
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "nwse-resize",
+                      }}
+                    />
+                    {/* Top */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        top: `-${handleOffset}px`,
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "ns-resize",
+                      }}
+                    />
+                    {/* Bottom */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        bottom: `-${handleOffset}px`,
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "ns-resize",
+                      }}
+                    />
+                    {/* Left */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        left: `-${handleOffset}px`,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "ew-resize",
+                      }}
+                    />
+                    {/* Right */}
+                    <div
+                      className="absolute bg-blue-500 pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        right: `-${handleOffset}px`,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        borderRadius: `${Math.ceil(handleSize / 2)}px`,
+                        cursor: "ew-resize",
+                      }}
+                    />
 
-                <div
-                  className="absolute w-3 h-3 bg-blue-500 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
-                  style={{
-                    left: "50%",
-                    top: "-50px",
-                    transform: `translate(-50%, -50%) rotate(${-(img.rotation || 0)}deg)`,
-                    border: "2px solid white",
-                  }}
-                />
-              </>
-            )}
+                    {/* Trait et Handle de rotation */}
+                    <svg
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: "0",
+                        top: "0",
+                        width: "100%",
+                        height: "100%",
+                        overflow: "visible",
+                      }}
+                    >
+                      <line
+                        x1="50%"
+                        x2="50%"
+                        y2="-50"
+                        stroke="#3b82f6"
+                        strokeWidth="1"
+                        pointerEvents="none"
+                      />
+                    </svg>
+
+                    <div
+                      className="absolute bg-blue-500 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
+                      style={{
+                        width: `${handleSize}px`,
+                        height: `${handleSize}px`,
+                        left: "50%",
+                        top: "-50px",
+                        transform: `translate(-50%, -50%) rotate(${-(img.rotation || 0)}deg)`,
+                        border: "2px solid white",
+                      }}
+                    />
+                  </>
+                );
+              })()}
           </div>
         ))}
       </div>
